@@ -1,0 +1,27 @@
+# config/transformer_config.yaml
+model_params:
+  model_name: distilbert-base-uncased  #  Modelo pre-entrenado de Hugging Face
+  max_length: 128   # Longitud máxima de la secuencia de tokens.  Ajustar según necesidad y recursos.
+  dropout_rate: 0.1  # Tasa de dropout (para fine-tuning, si se hace).
+  num_classes: null  # Usar None si *no* se hace fine-tuning para clasificación. Si es clasificación, poner el número de clases.
+  freeze_transformer: True  # Congelar el Transformer por defecto (solo fine-tuning de la capa de salida).
+project_id: your_project_id  #  ¡REEMPLAZAR!  ID de tu proyecto de Google Cloud.
+dataset_id: your_dataset_id    #  ¡REEMPLAZAR!  ID del dataset de BigQuery.
+text_table_id: your_table_id  #  ¡REEMPLAZAR!  Nombre de la tabla de BigQuery que contiene los *datos originales* de texto.
+text_column_name: text   #  ¡REEMPLAZAR!  Nombre de la *columna* que contiene el texto.
+match_id_column_name: partido_id  # ¡REEMPLAZAR! Nombre de la columna que contiene el ID del partido.
+transformer_temp_table: transformer_temp_table #  ¡REEMPLAZAR! Nombre de la tabla *temporal* donde Dataflow escribirá los resultados del preprocesamiento.
+region: us-central1 #REEMPLAZAR
+dataflow: #Configuracion de dataflow
+    project: your_project_id #  ¡REEMPLAZAR!
+    runner: DataflowRunner
+    temp_location: gs://your_bucket/tmp  #  ¡REEMPLAZAR!  Un bucket de Cloud Storage para archivos temporales.
+    staging_location: gs://your_bucket/staging  # ¡REEMPLAZAR!
+    setup_file: ./setup.py #Para instalar dependencias
+    # requirements_file: #Si se prefiere usar un archivo, en vez de setup.py
+    #     requirements.txt
+    machine_type: n1-standard-1 #Tipo de maquina
+    # max_num_workers: 2 #Numero maximo de workers
+    # num_workers: 1 #Numero de workers inicial
+    # autoscaling_algorithm: THROUGHPUT_BASED #Algoritmo de autoescalado
+transformer_data_dir: data/raw/text_data  # Directorio para datos de texto (solo si se usa localmente, no con Dataflow)

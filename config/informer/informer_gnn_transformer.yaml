@@ -1,0 +1,49 @@
+# config/informer/informer_gnn_transformer.yaml
+experiment_name: informer_gnn_transformer
+data_dir: data/processed
+seed: 42
+save_model: True
+model_save_path: models/informer_saved/
+
+model_params:
+  <<: *model_params  # Hereda todos los parámetros de model_params de informer_base.yaml
+  use_gnn: True        # Activar GNN
+  gnn_embedding_dim: 64   # Se calcula en base a la GNN
+  use_transformer: True  # Activar Transformer
+  transformer_embedding_dim: 768 # Se calcula en base al Transformer
+  seq_len: 96 #Se puede configurar
+  out_len: 24
+  label_len: 48
+
+#Configuración de la GNN
+gnn_params: &gnn_params
+    n_hidden: [64, 64]  # Dos capas GAT con 64 unidades ocultas cada una
+    n_classes: 512      # La salida de la GNN tendra la dimension del hidden size del Informer
+    n_layers: 2
+    dropout_rate: 0.1
+    gnn_type: "GAT"  # Usar GAT
+    use_batchnorm: False
+    activation: 'elu'
+    l1_reg: 0.0
+    l2_reg: 0.001
+training_params:
+  <<: *training_params
+  epochs: 3 #Se reduce para la prueba
+
+evaluation_params:
+  <<: *evaluation_params
+#Agregar datos para la conexion a la base de datos y dataflow
+project_id: your_project_id  #  ¡REEMPLAZAR!
+dataset_id: your_dataset_id    #  ¡REEMPLAZAR!
+transformer_table_id: your_table_id  #  ¡REEMPLAZAR!  (Tabla con los datos de texto)
+text_column_name: text   #  ¡REEMPLAZAR!  (Columna con el texto)
+match_id_column_name: partido_id  # ¡REEMPLAZAR!
+transformer_temp_table: transformer_temp_table #Tabla temporal
+region: us-central1 #REEMPLAZAR
+dataflow: #Configuracion de dataflow
+    project: your_project_id #  ¡REEMPLAZAR!
+    runner: DataflowRunner
+    temp_location: gs://your_bucket/tmp  #  ¡REEMPLAZAR!
+    staging_location: gs://your_bucket/staging  # ¡REEMPLAZAR!
+    setup_file: ./setup.py #Para instalar dependencias
+freq: h

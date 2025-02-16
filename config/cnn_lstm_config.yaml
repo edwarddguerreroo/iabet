@@ -1,0 +1,70 @@
+# config/cnn_lstm_config.yaml
+model_params:
+  cnn_filters: [32, 64, 128]  # Ejemplo: 3 capas convolucionales
+  cnn_kernel_sizes: [5, 3, 3]  # Kernels de tamaño 5, 3 y 3
+  cnn_pool_sizes: [2, 2, 1]   # Max pooling de tamaño 2, sin pooling en la última capa
+  cnn_dilation_rates: [1, 2, 4] # Dilatación creciente
+  lstm_units: 128
+  dropout_rate: 0.2
+  dense_units: [64]  # Una capa densa con 64 unidades
+  activation: relu
+  l1_reg: 0.0
+  l2_reg: 0.001
+  use_batchnorm: True
+  use_attention: True #Usar atención
+  attention_heads: 4 #Si se usa atención
+
+training_params:
+    learning_rate: 0.001
+    batch_size: 64
+    epochs: 100
+    optimizer: Adam
+    loss: mse  # Usar MSE por defecto, se puede cambiar
+    use_curriculum_learning: False
+    curriculum_stages: [] #Se configura si se usa curriculum
+    use_self_supervised_pretraining: False
+    ssl_tasks: [masking]
+    ssl_masking_ratio: 0.15
+    ssl_epochs: 10
+    ssl_task_weights: {masking: 1.0}
+    use_adversarial_training: False
+    epsilon: 0.01
+    use_imbalance_handling: False #Si se usa el manejo del desbalance
+    imbalance_strategy: smote #La estrategia
+
+evaluation_params:
+  metrics: [mae, mse, rmse, auc, brier_score, log_loss, roi, yield, profit, max_drawdown, sharpe_ratio]  # Todas las métricas
+  betting_strategies: [fixed_stake, proportional, kelly]  # Estrategias de apuestas a simular
+  initial_bankroll: 1000.0
+  fixed_stake: 10.0
+#Usar un valor por defecto para el experimento
+experiment_name: cnn_lstm_experiment
+#Directorio de datos
+data_dir: data/processed
+#Ruta para guardar el modelo
+model_save_path: models/cnn_lstm_saved/
+#Semilla
+seed: 42
+#Guardar modelo
+save_model: True
+#Agregar datos para la conexion a la base de datos y dataflow
+project_id: your_project_id  #  ¡REEMPLAZAR!
+dataset_id: your_dataset_id    #  ¡REEMPLAZAR!
+transformer_table_id: your_table_id  #  ¡REEMPLAZAR!  (Tabla con los datos de texto)
+text_column_name: text   #  ¡REEMPLAZAR!  (Columna con el texto)
+match_id_column_name: partido_id  # ¡REEMPLAZAR!
+transformer_temp_table: transformer_temp_table #Tabla temporal
+region: us-central1 #REEMPLAZAR
+dataflow: #Configuracion de dataflow
+    project: your_project_id #  ¡REEMPLAZAR!
+    runner: DataflowRunner
+    temp_location: gs://your_bucket/tmp  #  ¡REEMPLAZAR!
+    staging_location: gs://your_bucket/staging  # ¡REEMPLAZAR!
+    setup_file: ./setup.py #Para instalar dependencias
+#Si se usa GNN
+use_gnn: False
+gnn_embedding_dim: null
+#Si se usa Transformer
+use_transformer: False
+transformer_embedding_dim: null
+freq: h

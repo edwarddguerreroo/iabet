@@ -1,0 +1,85 @@
+# config/tft/tft_base.yaml
+experiment_name: tft_baseline  # Nombre para identificar el experimento
+data_dir: data/processed      # Directorio donde están los datos preprocesados
+seed: 42                      # Semilla para reproducibilidad
+save_model: True              # Guardar el modelo entrenado
+model_save_path: models/tft_saved/ # Directorio para guardar modelos
+
+model_params: &tft_base_params
+  raw_time_features_dim: 27  # ¡AJUSTAR A TUS DATOS! Número de características numéricas variables en el tiempo
+  raw_static_features_dim: 37 # ¡AJUSTAR A TUS DATOS! Número de características numéricas estáticas
+  time_varying_categorical_features_cardinalities: []  # ¡AJUSTAR! Lista de cardinalidades. Vacío si no hay.
+  static_categorical_features_cardinalities: []  # ¡AJUSTAR! Lista de cardinalidades. Vacío si no hay.
+  num_quantiles: 3          # Predicción cuantil (3 cuantiles: 0.1, 0.5, 0.9)
+  hidden_size: 64           # Tamaño de las capas ocultas (ej: 32, 64, 128 - empezar pequeño)
+  lstm_layers: 2            # Número de capas LSTM (ej: 1, 2)
+  attention_heads: 4        # Número de cabezas de atención (ej: 1, 2, 4)
+  dropout_rate: 0.1        # Tasa de dropout (ej: 0.1, 0.2)
+  use_positional_encoding: True  # Usar positional encoding (generalmente recomendado)
+  use_dropconnect: False        # Usar DropConnect (solo con LSTM/GRU)
+  use_scheduled_drop_path: False # Usar Scheduled Drop Path (si hay conexiones residuales)
+  drop_path_rate: 0.1       # Tasa inicial de Scheduled Drop Path
+  kernel_initializer: glorot_uniform # Inicializador de pesos
+  use_glu_in_grn: True          # Usar GLU en los GRNs (generalmente recomendado)
+  use_layer_norm_in_grn: True   # Usar Layer Normalization en los GRNs (generalmente recomendado)
+  use_multi_query_attention: False # Usar Multi-Query Attention (en lugar de Multi-Head)
+  use_indrnn: False             # Usar IndRNN en lugar de LSTM (excluyente con use_dropconnect)
+  use_logsparse_attention: False # Usar LogSparse Attention
+  sparsity_factor: 4            # Factor de esparcidad para LogSparse Attention
+  use_evidential_regression: False # Usar regresión evidencial (en lugar de cuantiles)
+  use_mdn: False                # Usar Mixture Density Network (en lugar de cuantiles)
+  num_mixtures: 5               # Número de mezclas para MDN (si se usa)
+  use_time2vec: False           # Usar Time2Vec
+  time2vec_dim: 32              # Dimensión de Time2Vec
+  time2vec_activation: sin
+  use_fourier_features: False   # Usar Learnable Fourier Features
+  num_fourier_features: 10      # Número de Fourier Features
+  use_reformer_attention: False   # Usar Reformer Attention
+  num_buckets: 8                # Número de buckets para Reformer
+  use_sparsemax: False          # Usar Sparsemax en lugar de Softmax
+  l1_reg: 0.0                  # Regularización L1
+  l2_reg: 0.0                  # Regularización L2
+  use_gnn: False      # Usar GNN
+  gnn_embedding_dim: null       # Se calcula automáticamente si use_gnn es True
+  use_transformer: False    # Usar Transformer
+  transformer_embedding_dim: null #Se calcula
+  seq_len: 20 # Longitud de la secuencia de entrada
+
+training_params: &training_params
+  learning_rate: 0.001
+  batch_size: 64
+  epochs: 100  # Ajustar según sea necesario (usar Early Stopping)
+  optimizer: Adam
+  loss: quantile_loss  # 'quantile_loss', 'evidential_loss', 'mdn_loss', 'mse'
+  use_curriculum_learning: False
+  curriculum_stages: [] #Se configura para curriculum
+  use_self_supervised_pretraining: False
+  ssl_tasks: [masking]
+  ssl_masking_ratio: 0.15
+  ssl_epochs: 10
+  ssl_task_weights: {masking: 1.0}
+  use_adversarial_training: False
+  epsilon: 0.01
+  use_imbalance_handling: False #Si se usa el manejo del desbalance
+  imbalance_strategy: smote #Estrategia a usar
+
+evaluation_params: &evaluation_params
+  metrics: [mae, mse, rmse, auc, brier_score, log_loss, roi, yield, profit, max_drawdown, sharpe_ratio]
+  betting_strategies: [fixed_stake, proportional, kelly]
+  initial_bankroll: 1000.0
+  fixed_stake: 10.0
+#Agregar datos para la conexion a la base de datos y dataflow
+project_id: your_project_id  #  ¡REEMPLAZAR!
+dataset_id: your_dataset_id    #  ¡REEMPLAZAR!
+transformer_table_id: your_table_id  #  ¡REEMPLAZAR!
+text_column_name: text   #  ¡REEMPLAZAR!
+match_id_column_name: partido_id  # ¡REEMPLAZAR!
+transformer_temp_table: transformer_temp_table #Tabla temporal
+region: us-central1 #REEMPLAZAR
+dataflow: #Configuracion de dataflow
+    project: your_project_id #  ¡REEMPLAZAR!
+    runner: DataflowRunner
+    temp_location: gs://your_bucket/tmp  #  ¡REEMPLAZAR!
+    staging_location: gs://your_bucket/staging  # ¡REEMPLAZAR!
+    setup_file: ./setup.py #Para instalar dependencias
+freq: h

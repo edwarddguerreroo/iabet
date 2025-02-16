@@ -1,0 +1,28 @@
+# config/tft/tft_indrnn.yaml
+experiment_name: tft_indrnn
+
+model_params:
+  <<: *tft_base_params  # Hereda todos los parámetros de model_params de tft_base.yaml
+  use_indrnn: True  # Activa IndRNN
+  lstm_layers: 2    #  (Aunque no se usen LSTMs, se mantiene el parámetro para consistencia)
+  # Puedes sobrescribir cualquier otro parámetro aquí, si es necesario
+  # hidden_size: 256  # Por ejemplo
+
+training_params:
+ <<: *training_params
+evaluation_params:
+  <<: *evaluation_params
+project_id: your_project_id  #  ¡REEMPLAZAR!
+dataset_id: your_dataset_id    #  ¡REEMPLAZAR!
+transformer_table_id: your_table_id  #  ¡REEMPLAZAR!
+text_column_name: text   #  ¡REEMPLAZAR!
+match_id_column_name: partido_id  # ¡REEMPLAZAR!
+transformer_temp_table: transformer_temp_table #Tabla temporal
+region: us-central1 #REEMPLAZAR
+dataflow: #Configuracion de dataflow
+    project: your_project_id #  ¡REEMPLAZAR!
+    runner: DataflowRunner
+    temp_location: gs://your_bucket/tmp  #  ¡REEMPLAZAR!
+    staging_location: gs://your_bucket/staging  # ¡REEMPLAZAR!
+    setup_file: ./setup.py #Para instalar dependencias
+freq: h

@@ -1,0 +1,84 @@
+# config/informer/informer_base.yaml
+experiment_name: informer_baseline
+data_dir: data/processed
+seed: 42
+save_model: True
+model_save_path: models/informer_saved/
+
+model_params: &model_params
+  enc_in: 27  # ¡Ajustar a tus datos! Número de características de entrada (numéricas + one-hot de categóricas)
+  dec_in: 27  # ¡Ajustar a tus datos!  Normalmente igual a enc_in
+  c_out: 1    # Número de variables a predecir (1 si es solo el resultado del partido)
+  seq_len: 96  # ¡Ajustar! Longitud de la secuencia de entrada (96 para datos por hora en 4 días)
+  label_len: 48 # ¡Ajustar! Longitud de la secuencia de inicio del decoder (48 = la mitad de la secuencia de entrada)
+  out_len: 24  # ¡Ajustar! Longitud de la secuencia de salida (predicción) (24 horas)
+  factor: 5  # Factor de muestreo para ProbSparseAttention (valor recomendado en el paper)
+  d_model: 512 # Dimensión del modelo (512 es el valor por defecto en el paper)
+  n_heads: 8   # Número de cabezas de atención
+  e_layers: 3  # Número de capas del encoder
+  d_layers: 2  # Número de capas del decoder
+  d_ff: 2048   # Dimensión de la capa feed-forward
+  dropout_rate: 0.1  # Tasa de dropout
+  activation: relu   # Función de activación (gelu también es común)
+  output_attention: False # No retornar los pesos de atención por defecto
+  distil: True        # Usar destilación en el encoder (True por defecto)
+  mix: True          # Usar mezcla de atención en el decoder (True por defecto)
+  embed_type: fixed # Tipo de embedding temporal ('fixed', 'timeF', 'learned')
+  freq: h            # Frecuencia de los datos ('s': segundos, 't': minutos, 'h': horas, 'd': días, 'b': días hábiles, 'w': semanas, 'm': meses)
+  embed_positions: True # Usar Positional Embedding
+  conv_kernel_size: 25  # Tamaño del kernel convolucional para la destilación
+  use_time2vec: False   # Usar Time2Vec
+  time2vec_dim: 32
+  time2vec_activation: sin
+  use_fourier_features: False # Usar Learnable Fourier Features
+  num_fourier_features: 10
+  use_sparsemax: False      #Usar sparsemax
+  use_indrnn: False
+  use_logsparse_attention: True #Usar logsparse attention
+  l1_reg: 0.0  # Regularización L1
+  l2_reg: 0.0  # Regularización L2
+  use_scheduled_drop_path: False #Usar Scheduled Drop Path
+  drop_path_rate: 0.1
+  use_gnn: False      #Por defecto, False
+  use_transformer: False #Por defecto, False
+  gnn_embedding_dim: null  #Si no se usa, se pone a null
+  transformer_embedding_dim: null
+
+training_params: &training_params
+  learning_rate: 0.0001
+  batch_size: 32
+  epochs: 10
+  optimizer: Adam
+  loss: mse #Se puede usar mse
+  use_curriculum_learning: False #Por defecto, False
+  curriculum_stages: []
+  use_self_supervised_pretraining: False #Por defecto, False
+  ssl_tasks: [masking]
+  ssl_masking_ratio: 0.15
+  ssl_epochs: 10
+  ssl_task_weights: {masking: 1.0}
+  use_adversarial_training: False #Por defecto, False
+  epsilon: 0.01
+  use_imbalance_handling: False #Si se usa el manejo de desbalance de clases
+  imbalance_strategy: smote
+
+evaluation_params: &evaluation_params
+  metrics: [mae, mse, rmse, auc, brier_score, log_loss, roi, yield, profit, max_drawdown, sharpe_ratio]  # Todas las métricas
+  betting_strategies: [fixed_stake, proportional, kelly]  # Estrategias de apuestas a simular
+  initial_bankroll: 1000.0
+  fixed_stake: 10.0
+#Agregar datos para la conexion a la base de datos y dataflow
+project_id: your_project_id  #  ¡REEMPLAZAR!
+dataset_id: your_dataset_id    #  ¡REEMPLAZAR!
+transformer_table_id: your_table_id  #  ¡REEMPLAZAR!  (Tabla con los datos de texto)
+text_column_name: text   #  ¡REEMPLAZAR!  (Columna con el texto)
+match_id_column_name: partido_id  # ¡REEMPLAZAR!
+transformer_temp_table: transformer_temp_table #Tabla temporal
+region: us-central1 #REEMPLAZAR
+dataflow: #Configuracion de dataflow
+    project: your_project_id #  ¡REEMPLAZAR!
+    runner: DataflowRunner
+    temp_location: gs://your_bucket/tmp  #  ¡REEMPLAZAR!
+    staging_location: gs://your_bucket/staging  # ¡REEMPLAZAR!
+    setup_file: ./setup.py #Para instalar dependencias
+freq: h
