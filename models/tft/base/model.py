@@ -4,7 +4,7 @@ from tensorflow.keras.layers import (
     Concatenate, Embedding, Add, Dropout, Layer, Reshape, TimeDistributed,
     Attention, GlobalAveragePooling1D, Conv1D
 )
-from tensorflow.keras.models import Model
+from tensorflow.keras.models import Model, Sequential
 from typing import List, Dict, Optional, Tuple, Union, Callable
 #Importar capas personalizadas
 from models.tft.base.layers import DropConnect, ScheduledDropPath, GLU, Time2Vec, Sparsemax, LearnableFourierFeatures, MultiQueryAttention, VariableSelectionNetwork, GatedResidualNetwork, PositionalEmbedding
@@ -12,8 +12,10 @@ import tensorflow_probability as tfp  # Para Deep Evidential Regression y MDN
 tfd = tfp.distributions
 import numpy as np
 from .config import TFTConfig #Importar configuración
+import json
 from core.utils.helpers import load_config
 from models.tft.base.indrnn import IndRNN
+from tf_fourier_features import FourierFeatureProjection
 
 # --- Deep Evidential Regression Layer ---
 class EvidentialRegression(Layer):
@@ -119,7 +121,7 @@ class TFT(Model):
         if self.config.use_indrnn and self.config.use_dropconnect:
             raise ValueError("IndRNN no es compatible con DropConnect (que es específico de LSTM/GRU).")
 
-        if sum([self.config.use_reformer_attention, self.config.use_logsparse_attention,
+        if sum([self.config.use_reformer_attention,
                 self.config.use_multi_query_attention]) > 1:
             raise ValueError("Solo se puede seleccionar un tipo de atención avanzada a la vez.")
 
@@ -130,6 +132,7 @@ class TFT(Model):
 
         if self.config.use_mdn and self.config.use_evidential_regression:
             raise ValueError("No se puede usar MDN y regresion evidencial al mismo tiempo")
+
 
         if self.config.use_scheduled_drop_path and self.config.dropout_rate == 0.0:
             print("Advertencia: Se usa ScheduledDropPath pero dropout_rate es 0. No tendra efecto")
@@ -168,7 +171,8 @@ class TFT(Model):
             num_inputs=num_static_inputs, units=self.config.hidden_size, dropout_rate=self.config.dropout_rate,
             use_glu_in_grn=self.config.use_glu_in_grn,
             l1_reg=self.config.l1_reg,
-            l2_reg=self.config.l2_reg
+            l2_reg=self.config.l2_reg,
+            context_units= self.config.hidden_size
         )
 
         # --- LSTM Encoder-Decoder o IndRNN Encoder ---
@@ -207,18 +211,16 @@ class TFT(Model):
         if self.config.use_reformer_attention:
             # self.attention = ReformerAttentionLayer(...)  # Implementar o integrar
             raise NotImplementedError("Reformer Attention no está implementado")
-        elif self.config.use_time_kernel_attention:
-            raise NotImplementedError("Time Kernel Attention no está implementado")
         elif self.config.use_multi_query_attention:
             self.attention = MultiQueryAttention(d_model=self.config.hidden_size, num_heads=self.config.attention_heads,
-                                            dropout_rate=self.config.dropout_rate)
+                                                dropout_rate=self.config.dropout_rate)
         else:
             self.attention = MultiHeadAttention(
                 num_heads=self.config.attention_heads,
                 key_dim=self.config.hidden_size,
                 dropout=self.config.dropout_rate,
                 kernel_initializer=self.config.kernel_initializer,
-        )
+            )
 
         self.attention_grn = GatedResidualNetwork(
             self.config.hidden_size, self.config.dropout_rate, use_time_distributed=True,
@@ -265,127 +267,131 @@ class TFT(Model):
             self.transformer_context_grn = GatedResidualNetwork(self.config.hidden_size, self.config.dropout_rate, activation="elu", use_time_distributed=False)
 
 
-def call(self, inputs: Tuple[tf.Tensor, ...], training=None) -> tf.Tensor:
-    time_varying_numeric_inputs, time_varying_categorical_inputs, static_numeric_inputs, static_categorical_inputs, time_inputs = inputs[:5]
+    def call(self, inputs: Tuple[tf.Tensor, ...], training=None) -> tf.Tensor:
 
-    # --- Desempaquetar Entradas ---
-    time_varying_numeric_inputs,  # (batch_size, seq_len, num_time_varying_numeric)
-    time_varying_categorical_inputs,  # (batch_size, seq_len, num_time_varying_categorical)
-    static_numeric_inputs,  # (batch_size, num_static_numeric)
-    static_categorical_inputs,  # (batch_size, num_static_categorical)
-    time_inputs  = inputs[:5]  # Los primeros 5 son del TFT
-    #Las entradas de la GNN y el transformer son opcionales
-    gnn_input = inputs[5] if self.config.use_gnn and len(inputs) > 5 else None
-    transformer_input = inputs[6] if self.config.use_transformer and len(inputs) > 6 else None
+        # --- Desempaquetar Entradas ---
+        # Unpack based on configuration:
+        if self.config.use_gnn and self.config.use_transformer:
+            time_varying_numeric_inputs, time_varying_categorical_inputs, static_numeric_inputs, static_categorical_inputs, time_inputs, gnn_input, transformer_input = inputs
+        elif self.config.use_gnn:
+            time_varying_numeric_inputs, time_varying_categorical_inputs, static_numeric_inputs, static_categorical_inputs, time_inputs, gnn_input = inputs
+            transformer_input = None  # Ensure it's set to None
+        elif self.config.use_transformer:
+            time_varying_numeric_inputs, time_varying_categorical_inputs, static_numeric_inputs, static_categorical_inputs, time_inputs, transformer_input = inputs
+            gnn_input = None
+        else:  # Neither GNN nor Transformer
+            time_varying_numeric_inputs, time_varying_categorical_inputs, static_numeric_inputs, static_categorical_inputs, time_inputs = inputs
+            gnn_input = None  # Ensure these are None
+            transformer_input = None
 
-    # --- Time2Vec (Opcional) ---
-    if self.config.use_time2vec:
-        time_embedding = self.time2vec(time_inputs)
-        time_varying_numeric_inputs = Concatenate(axis=-1)([time_varying_numeric_inputs, time_embedding])
+        # --- Time2Vec (Opcional) ---
+        if self.config.use_time2vec:
+            time_embedding = self.time2vec(time_inputs)
+            time_varying_numeric_inputs = Concatenate(axis=-1)([time_varying_numeric_inputs, time_embedding])
 
-    # --- Fourier (Opcional) ---
-    if self.config.use_fourier_features:
-        fourier_embedding = self.fourier_features(time_inputs)
-        time_varying_numeric_inputs = Concatenate(axis=-1)([time_varying_numeric_inputs, fourier_embedding])
+        # --- Fourier (Opcional) ---
+        if self.config.use_fourier_features:
+            fourier_embedding = self.fourier_features(time_inputs)
+            time_varying_numeric_inputs = Concatenate(axis=-1)([time_varying_numeric_inputs, fourier_embedding])
 
-    # --- Embeddings para variables categóricas ---
-    time_varying_embedded = [
-        self.time_varying_embeddings[i](time_varying_categorical_inputs[:, :, i])
-        for i in range(len(self.config.time_varying_categorical_features_cardinalities))
-    ]  # List of (batch_size, seq_len, hidden_size)
-    static_embedded = [
-        self.static_embeddings[i](static_numeric_inputs[:, i])
-        for i in range(len(self.config.static_categorical_features_cardinalities))
-    ]  # List of (batch_size, hidden_size)
+        # --- Embeddings para variables categóricas ---
+        time_varying_embedded = [
+            self.time_varying_embeddings[i](time_varying_categorical_inputs[i])
+            for i in range(len(self.config.time_varying_categorical_features_cardinalities))
+        ]  # List of (batch_size, seq_len, hidden_size)
 
-    # --- Concatenar entradas para VSNs ---
-    time_varying_inputs = [time_varying_numeric_inputs] + time_varying_embedded
-    static_numeric_inputs = inputs[2]  # Assuming static numeric inputs are the third element in the inputs tuple
-    static_inputs = [static_numeric_inputs] + static_embedded
+        static_embedded = [
+            self.static_embeddings[i](static_categorical_inputs[i])
+            for i in range(len(self.config.static_categorical_features_cardinalities))
+        ]  # List of (batch_size, hidden_size)
+        # --- Concatenar entradas para VSNs ---
 
-    # --- Variable Selection Networks ---
-    static_context, _ = self.vsn_static(static_inputs, training=training)
-    static_context = self.grn_static_context(static_context, training=training)  # (batch_size, hidden_size)
+        time_varying_inputs = [time_varying_numeric_inputs] + time_varying_embedded
+        static_inputs = [static_numeric_inputs] + static_embedded
 
-    # --- Procesar Contexto Estático (GNN/Transformer) ---
-    #Se unen los embeddings de la GNN y el Transformer (si existen)
-    if self.config.use_gnn and gnn_input is not None:
-        gnn_embedding = self.gnn_projection(gnn_input)  # (batch_size, gnn_embedding_dim) -> (batch_size, d_model)
-        gnn_embedding = self.gnn_context_grn(gnn_embedding, training=training)
-        static_context = tf.concat([static_context, gnn_embedding], axis=-1)  # Unir al contexto estatico
+        # --- Variable Selection Networks ---
+        static_context, _ = self.vsn_static(static_inputs, training=training)
+        static_context = self.grn_static_context(static_context, training=training)  # (batch_size, hidden_size)
 
-    if self.config.use_transformer and transformer_input is not None:
-        transformer_embedding = self.transformer_projection(transformer_input)
-        transformer_embedding = self.transformer_context_grn(transformer_embedding, training=training)
-        static_context = tf.concat([static_context, transformer_embedding], axis=-1)  # Unir al contexto estatico
+        # --- Procesar Contexto Estático (GNN/Transformer) ---
+        # Se unen los embeddings de la GNN y el Transformer (si existen)
+        if self.config.use_gnn and gnn_input is not None:
+            gnn_embedding = self.gnn_projection(gnn_input)  # (batch_size, gnn_embedding_dim) -> (batch_size, hidden_size)
+            gnn_embedding = self.gnn_context_grn(gnn_embedding, training=training)
+            static_context = tf.concat([static_context, gnn_embedding], axis=-1)  # Unir al contexto estatico
 
-    # --- Capa Densa para Unificar Contexto (Si es Necesario) ---
-    if static_context is not None:
-        static_context = Dense(self.config.hidden_size)(static_context) #Proyeccion final
-    vsn_time_varying_output, _ = self.vsn_time_varying(time_varying_inputs, training=training, context=static_context)
+        if self.config.use_transformer and transformer_input is not None:
+            transformer_embedding = self.transformer_projection(transformer_input)
+            transformer_embedding = self.transformer_context_grn(transformer_embedding, training=training)
+            static_context = tf.concat([static_context, transformer_embedding], axis=-1)  # Unir al contexto estatico
 
-    # --- Positional Encoding (Opcional) ---
-    if self.config.use_positional_encoding:
-        vsn_time_varying_output = self.positional_encoding(vsn_time_varying_output)
+        # --- Capa Densa para Unificar Contexto (Si es Necesario) ---
+        if static_context is not None:
+            static_context = Dense(self.config.hidden_size)(static_context) #Proyeccion final
+        vsn_time_varying_output, _ = self.vsn_time_varying(time_varying_inputs, training=training, context=static_context)
 
-    # --- LSTM Encoder-Decoder o IndRNN Encoder ---
-    encoder_output = vsn_time_varying_output
-    initial_state = None
+        # --- Positional Encoding (Opcional) ---
+        if self.config.use_positional_encoding:
+            vsn_time_varying_output = self.positional_encoding(vsn_time_varying_output)
 
-    if self.config.use_indrnn:
-        for layer in self.encoder_layers:
-            encoder_output, initial_state = layer(encoder_output, initial_state=initial_state)
-            initial_state = [initial_state]
-    else:
-        for i in range(self.config.lstm_layers):
-            encoder_output, state_h, state_c = self.encoder_lstm_layers[i](
-                encoder_output, training=training, initial_state=initial_state
-            )
+        # --- LSTM Encoder-Decoder o IndRNN Encoder ---
+        encoder_output = vsn_time_varying_output
+        initial_state = None
+
+        if self.config.use_indrnn:
+            for layer in self.encoder_layers:
+                encoder_output, initial_state = layer(encoder_output, initial_state=initial_state)
+                initial_state = [initial_state]
+        else:
+            for i in range(self.config.lstm_layers):
+                encoder_output, state_h, state_c = self.encoder_lstm_layers[i](
+                    encoder_output, training=training, initial_state=initial_state
+                )
+                if self.config.use_dropconnect:
+                    encoder_output = self.dropconnect_encoder_layers[i](encoder_output, training=training)
+                initial_state = [state_h, state_c]
+
+            decoder_output = self.decoder_lstm(encoder_output, initial_state=initial_state, training=training)
             if self.config.use_dropconnect:
-                encoder_output = self.dropconnect_encoder_layers[i](encoder_output, training=training)
-            initial_state = [state_h, state_c]
+                decoder_output = self.dropconnect_decoder(decoder_output, training=training)
 
-        decoder_output = self.decoder_lstm(encoder_output, initial_state=initial_state, training=training)
-        if self.config.use_dropconnect:
-            decoder_output = self.dropconnect_decoder(decoder_output, training=training)
+        # --- Atención ---
+        if self.config.use_indrnn:
+            attention_input = encoder_output
+        else:
+            attention_input = decoder_output
 
-    # --- Atención ---
-    if self.config.use_indrnn:
-        attention_input = encoder_output
-    else:
-        attention_input = decoder_output
+        attention_output, attention_weights = self.attention(
+            q=attention_input,
+            v=attention_input,
+            k=attention_input,
+            training=training,
+        )
 
-    attention_output, attention_weights = self.attention(
-        q=attention_input,
-        v=attention_input,
-        k=attention_input,
-        training=training,
-    )
+        attention_output = self.attention_grn(
+            attention_output, training=training, context=static_context
+        )
 
-    attention_output = self.attention_grn(
-        attention_output, training=training, context=static_context
-    )
+        # --- Capa de Proyección y Salida ---
+        if not self.config.use_indrnn and not self.config.use_reformer_attention:  # Solo si se usa LSTM y no Reformer
+            projected_lstm_output = self.lstm_projection(decoder_output)
+            attention_output = Add()([projected_lstm_output, attention_output])
 
-    # --- Capa de Proyección y Salida ---
-    if not self.config.use_indrnn and not self.config.use_reformer_attention:  # Solo si se usa LSTM y no Reformer
-        projected_lstm_output = self.lstm_projection(decoder_output)
-        attention_output = Add()([projected_lstm_output, attention_output])
+        if self.config.use_scheduled_drop_path:
+            attention_output = self.scheduled_drop_path(attention_output, training=training)
 
-    if self.config.use_scheduled_drop_path:
-        attention_output = self.scheduled_drop_path(attention_output, training=training)
+        output = self.attention_grn(attention_output, training=training)  # Procesamos de nuevo
 
-    output = self.attention_grn(attention_output, training=training)  # Procesamos de nuevo
-
-    #Seleccion de la capa de salida
-    if self.config.use_mdn:
-        pis, mus, sigmas = self.output_layer(output)
-        return pis, mus, sigmas
-    elif self.config.use_evidential_regression:
-        output = self.output_layer(output)
-        return output
-    else:
-        output = self.output_layer(output)  # Salida normal
-        return output
+        #Seleccion de la capa de salida
+        if self.config.use_mdn:
+            pis, mus, sigmas = self.output_layer(output)
+            return pis, mus, sigmas
+        elif self.config.use_evidential_regression:
+            output = self.output_layer(output)
+            return output
+        else:
+            output = self.output_layer(output)  # Salida normal
+            return output
 
 
     def get_attention_weights(self, inputs: Tuple[tf.Tensor, ...]) -> tf.Tensor:
@@ -497,20 +503,34 @@ def call(self, inputs: Tuple[tf.Tensor, ...], training=None) -> tf.Tensor:
 
         # Construir el modelo (usando la configuración cargada)
         # Necesitamos una entrada "dummy" para construir el grafo del modelo
-        dummy_inputs = (
-            tf.zeros((1, 10, self.config.raw_time_features_dim)),  # (batch_size, seq_len, raw_time_features)
-            tf.zeros((1, 10, len(self.config.time_varying_categorical_features_cardinalities))),  # (batch_size, seq_len, num_cat_time_features)
-            tf.zeros((1, self.config.raw_static_features_dim)),  # (batch_size, raw_static_features)
-            tf.zeros((1, len(self.config.static_categorical_features_cardinalities))),  # (batch_size, num_cat_static_features)
-            tf.zeros((1, 10, 1)) #Time input
-        )
-        #Si se usa GNN y Transformer
-        if self.config.use_gnn:
-            dummy_inputs = dummy_inputs + (tf.zeros((1, self.config.gnn_embedding_dim)),) #Input para GNN
-        if self.config.use_transformer:
-            dummy_inputs = dummy_inputs + (tf.zeros((1, self.config.transformer_embedding_dim)),) #Input para Transformer
+    def create_dummy_inputs(config, batch_size, seq_len):
+        time_inputs = [
+                tf.zeros((batch_size, seq_len, config.raw_time_features_dim)),  # (batch_size, seq_len, raw_time_features)
+                tf.zeros((batch_size, seq_len, len(config.time_varying_categorical_features_cardinalities))),  # (batch_size, seq_len, num_cat_time_features)
+                tf.zeros((batch_size, seq_len, 1))  # Time input
+        ]
+        static_inputs = [
+                tf.zeros((batch_size, config.raw_static_features_dim)),  # (batch_size, raw_static_features)
+                tf.zeros((batch_size, len(config.static_categorical_features_cardinalities)))  # (batch_size, num_cat_static_features)
+        ]
 
-        _ = self(dummy_inputs)  # Construir el modelo
+        # Asegurar que static_inputs tenga 3 tensores
+        if len(static_inputs) == 2:
+                dummy_static_input = tf.zeros((batch_size, 1))  # Ajusta la dimensión según lo esperado
+                static_inputs.append(dummy_static_input)  # 🔹 Agregarlo explícitamente
+        
+        model_inputs = time_inputs + static_inputs
+
+        if config.use_gnn:
+            model_inputs.append(tf.zeros((batch_size, config.gnn_embedding_dim)))  # Input para GNN
+        
+        if config.use_transformer:
+            model_inputs.append(tf.zeros((batch_size, config.transformer_embedding_dim)))  # Input para Transformer
+        
+        # 🔹 Verificar dimensiones antes de retornar
+        print(f"static_inputs después de ajuste: {[tensor.shape for tensor in static_inputs]}")
+
+        return tuple(model_inputs)
 
         # Cargar los pesos del modelo
         self.load_weights(filepath + "_weights.h5")

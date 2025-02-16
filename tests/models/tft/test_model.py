@@ -4,13 +4,24 @@ import tensorflow as tf
 import numpy as np
 from models.tft.base.model import TFT
 from models.tft.base.config import TFTConfig
-from models.tft.base.layers import *  # Import all layers for individual testing
+#Importar capas
+from models.tft.base.layers import (
+    GLU,
+    GatedResidualNetwork,
+    VariableSelectionNetwork,
+    PositionalEmbedding,
+    Time2Vec,
+    LearnableFourierFeatures,
+    Sparsemax,
+    DropConnect,
+    ScheduledDropPath,
+    MultiQueryAttention
+)
 
-
-# Fixture for a test configuration
+# Fixture para una configuración de prueba (puedes usar un archivo YAML o un diccionario)
 @pytest.fixture
 def test_config():
-    # Use a dictionary for easier control in tests
+    # Usar un diccionario para mayor control en las pruebas
     config_dict = {
         "raw_time_features_dim": 5,
         "raw_static_features_dim": 2,
@@ -21,7 +32,7 @@ def test_config():
         "lstm_layers": 1,
         "attention_heads": 2,
         "dropout_rate": 0.1,
-        "use_positional_encoding": False,
+        "use_positional_encoding": False, #Probar con False
         "use_dropconnect": False,
         "use_scheduled_drop_path": False,
         "drop_path_rate": 0.1,
@@ -50,111 +61,82 @@ def test_config():
         "use_transformer": False,
         "transformer_embedding_dim": None,
         "loss": "quantile_loss",
-        "seq_len": 12
+        "seq_len": 12 #Agregamos seq_len
     }
     return TFTConfig(**config_dict)
 
-# Test model creation
+# Prueba de creación del modelo
 def test_tft_creation(test_config):
     model = TFT(config=test_config)
     assert isinstance(model, TFT)
 
-# Test output shape
+# Prueba de la forma de la salida
 def test_tft_output_shape(test_config):
     model = TFT(config=test_config)
     batch_size = 8
-    seq_len = 12
-    time_varying_numeric_inputs = tf.random.normal((batch_size, seq_len, test_config.raw_time_features_dim))
-    time_varying_categorical_inputs = tf.random.uniform(
-        (batch_size, seq_len, len(test_config.time_varying_categorical_features_cardinalities)),
-        minval=0, maxval=10, dtype=tf.int32
-    )
-    static_numeric_inputs = tf.random.normal((batch_size, test_config.raw_static_features_dim))
-    static_categorical_inputs = tf.random.uniform((batch_size, len(test_config.static_categorical_features_cardinalities)), minval=0, maxval=3, dtype=tf.int32)
-    time_inputs = tf.random.uniform((batch_size, seq_len, 1), minval=0, maxval=24, dtype=tf.float32)
-
-    inputs = (time_varying_numeric_inputs, time_varying_categorical_inputs,
-              static_numeric_inputs, static_categorical_inputs, time_inputs)
+    seq_len = test_config.seq_len
+    inputs = create_dummy_inputs(test_config, batch_size, seq_len)
     output = model(inputs)
     assert output.shape == (batch_size, seq_len, test_config.num_quantiles)
 
-# Test with training=True
+# Prueba con entrenamiento activado
 def test_tft_forward_pass_training(test_config):
     model = TFT(config=test_config)
     batch_size = 8
-    seq_len = 12
-    time_varying_numeric_inputs = tf.random.normal((batch_size, seq_len, test_config.raw_time_features_dim))
-    time_varying_categorical_inputs = tf.random.uniform(
-        (batch_size, seq_len, len(test_config.time_varying_categorical_features_cardinalities)),
-        minval=0, maxval=10, dtype=tf.int32
-    )
-    static_numeric_inputs = tf.random.normal((batch_size, test_config.raw_static_features_dim))
-    static_categorical_inputs = tf.random.uniform((batch_size, len(test_config.static_categorical_features_cardinalities)), minval=0, maxval=3, dtype=tf.int32)
-    time_inputs = tf.random.uniform((batch_size, seq_len, 1), minval=0, maxval=24, dtype=tf.float32)
-    inputs = (time_varying_numeric_inputs, time_varying_categorical_inputs,
-              static_numeric_inputs, static_categorical_inputs, time_inputs)
-    output = model(inputs, training=True)
+    seq_len = test_config.seq_len
+    inputs = create_dummy_inputs(test_config, batch_size, seq_len)
+    output = model(inputs, training=True)  # Pasar training=True
     assert output.shape == (batch_size, seq_len, test_config.num_quantiles)
 
-
+#Prueba con positional encoding
 def test_tft_positional_encoding(test_config):
-    test_config.use_positional_encoding = True
+    test_config.use_positional_encoding = True #Se activa
     model = TFT(config=test_config)
     batch_size = 8
     seq_len = 12
-    inputs = create_dummy_inputs(test_config, batch_size, seq_len)
+    inputs = create_dummy_inputs(test_config, batch_size, seq_len) #Se crean con la función
     output = model(inputs, training=True)
     assert output.shape == (batch_size, seq_len, test_config.num_quantiles)
 
+#Prueba con Time2Vec
 def test_tft_time2vec(test_config):
-    test_config.use_time2vec = True
+    test_config.use_time2vec = True #Se activa
     model = TFT(config=test_config)
     batch_size = 8
     seq_len = 12
-    inputs = create_dummy_inputs(test_config, batch_size, seq_len)
+    inputs = create_dummy_inputs(test_config, batch_size, seq_len) #Se crean con la función
     output = model(inputs, training=True)
     assert output.shape == (batch_size, seq_len, test_config.num_quantiles)
 
+#Prueba con Fourier Features
 def test_tft_fourier_features(test_config):
-    test_config.use_fourier_features = True
+    test_config.use_fourier_features = True #Se activa
     model = TFT(config=test_config)
     batch_size = 8
     seq_len = 12
-    inputs = create_dummy_inputs(test_config, batch_size, seq_len)
+    inputs = create_dummy_inputs(test_config, batch_size, seq_len) #Se crean con la función
     output = model(inputs, training=True)
     assert output.shape == (batch_size, seq_len, test_config.num_quantiles)
 
-
+#Prueba usando IndRNN
 def test_tft_indrnn(test_config):
-    test_config.use_indrnn = True
+    test_config.use_indrnn = True  # Se activa
     model = TFT(config=test_config)
     batch_size = 8
     seq_len = 12
-    inputs = create_dummy_inputs(test_config, batch_size, seq_len)
+    inputs = create_dummy_inputs(test_config, batch_size, seq_len) #Se crean con la función
     output = model(inputs, training=True)
     assert output.shape == (batch_size, seq_len, test_config.num_quantiles)
 
+#Prueba usando LogSparse
 def test_tft_logsparse(test_config):
-    test_config.use_logsparse_attention = True
+    test_config.use_logsparse_attention = True  # Se activa
     model = TFT(config=test_config)
     batch_size = 8
     seq_len = 12
     inputs = create_dummy_inputs(test_config, batch_size, seq_len)
     output = model(inputs, training=True)
     assert output.shape == (batch_size, seq_len, test_config.num_quantiles)
-# Helper function to create dummy inputs based on the config
-def create_dummy_inputs(config, batch_size, seq_len):
-  time_varying_numeric_inputs = tf.random.normal((batch_size, seq_len, config.raw_time_features_dim))
-  time_varying_categorical_inputs = tf.random.uniform(
-      (batch_size, seq_len, len(config.time_varying_categorical_features_cardinalities)),
-      minval=0, maxval=10, dtype=tf.int32
-  )
-  static_numeric_inputs = tf.random.normal((batch_size, config.raw_static_features_dim))
-  static_categorical_inputs = tf.random.uniform((batch_size, len(config.static_categorical_features_cardinalities)), minval=0, maxval=3, dtype=tf.int32)
-  time_inputs = tf.random.uniform((batch_size, seq_len, 1), minval=0, maxval=24, dtype=tf.float32)
-  return (time_varying_numeric_inputs, time_varying_categorical_inputs,
-            static_numeric_inputs, static_categorical_inputs, time_inputs)
-
 # Prueba de get_config
 def test_get_config(test_config):
     model = TFT(config=test_config)
@@ -162,3 +144,37 @@ def test_get_config(test_config):
     assert isinstance(config, dict)
     # Puedes añadir más verificaciones aquí para asegurarte de que la configuración
     # contiene los valores esperados
+
+# Helper function to create dummy inputs based on the config
+def create_dummy_inputs(config, batch_size, seq_len):
+    time_varying_numeric_inputs = tf.random.normal((batch_size, seq_len, config.raw_time_features_dim))
+    time_varying_categorical_inputs = [
+        tf.stack([
+            tf.random.uniform((batch_size,), minval=0, maxval=card, dtype=tf.int32)
+            for card in config.time_varying_categorical_features_cardinalities
+        ])
+    ]
+    static_numeric_inputs = tf.random.normal((batch_size, config.raw_static_features_dim))
+    static_categorical_inputs = [
+        tf.random.uniform((batch_size, 1), minval=0, maxval=cardinality, dtype=tf.int32)
+        for cardinality in config.static_categorical_features_cardinalities
+    ]
+    time_inputs = tf.random.uniform((batch_size, seq_len, 1), minval=0, maxval=24, dtype=tf.float32)
+    
+    # Unir listas de tensores en un solo tensor si es necesario
+    time_varying_categorical_inputs = tf.concat(time_varying_categorical_inputs, axis=-1)
+    static_categorical_inputs = tf.concat(static_categorical_inputs, axis=-1)
+    
+    # Ajustar la cantidad de entradas
+    inputs = (time_varying_numeric_inputs, time_varying_categorical_inputs, static_numeric_inputs, static_categorical_inputs, time_inputs)
+    print(f"Cantidad de tensores en inputs: {len(inputs)}")
+    
+    return inputs
+
+# Prueba de cantidad de entradas
+
+def test_input_tensor_count(test_config):
+    batch_size = 8
+    seq_len = test_config.seq_len
+    inputs = create_dummy_inputs(test_config, batch_size, seq_len)
+    assert len(inputs) == 5, f"Se esperaban 5 entradas, pero se obtuvieron {len(inputs)}"
