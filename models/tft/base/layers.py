@@ -310,53 +310,102 @@ class LearnableFourierFeatures(Layer):
         return config
 
 
-# --- Sparsemax ---
-class Sparsemax(Layer):
-    """Sparsemax activation function. (https://arxiv.org/abs/1602.02068)"""
+def project_onto_simplex(z, m):
+    """
+    Proyecta el vector 1D z sobre el simplex restringido a las posiciones activas definidas por m.
+    Es decir, se resuelve:
+        min_p  || p - z ||^2   sujeto a  p >= 0,  sum_{i: m_i True} p_i = 1,
+        y se fija p_i = 0 para los índices donde m_i es False.
+    """
+    num_active = tf.reduce_sum(tf.cast(m, tf.int32))
+    
+    # Si no hay posiciones activas, se devuelve un vector de ceros.
+    def no_active():
+        return tf.zeros_like(z)
+    
+    def yes_active():
+        # Extraer los valores activos.
+        z_active = tf.boolean_mask(z, m)
+        # Ordenar en orden descendente.
+        z_sorted = tf.sort(z_active, direction='DESCENDING')
+        # Suma acumulativa.
+        z_cumsum = tf.cumsum(z_sorted)
+        # Vector de índices 1-indexados.
+        k_vec = tf.cast(tf.range(1, tf.size(z_sorted) + 1), z.dtype)
+        # Condición: z_sorted[j] - ((sum_{i=1}^{j} z_sorted[i] - 1) / j) > 0
+        cond = z_sorted - (z_cumsum - 1) / k_vec
+        valid = tf.where(cond > 0)
+        
+        # Si se encontró al menos un índice válido, se usa el algoritmo clásico.
+        def valid_branch():
+            rho = tf.cast(valid[-1][0] + 1, tf.int32)  # rho es el máximo índice válido (1-indexado)
+            theta = (tf.reduce_sum(z_sorted[:rho]) - 1) / tf.cast(rho, z.dtype)
+            p_active = tf.maximum(z_active - theta, 0)
+            return p_active
+        
+        # Si no se encontró ningún índice válido, asignamos una distribución uniforme.
+        def invalid_branch():
+            num = tf.cast(tf.size(z_active), z.dtype)
+            return tf.fill(tf.shape(z_active), 1 / num)
+        
+        p_active = tf.cond(tf.size(valid) > 0, valid_branch, invalid_branch)
+        
+        # Reconstruir el vector completo, colocando 0 en las posiciones inactivas.
+        p = tf.zeros_like(z)
+        active_idx = tf.reshape(tf.where(m), [-1])
+        p = tf.tensor_scatter_nd_update(p, tf.expand_dims(active_idx, 1), p_active)
+        return p
 
+    return tf.cond(tf.equal(num_active, 0), lambda: no_active(), lambda: yes_active())
+
+class Sparsemax(Layer):
+    """
+    Función de activación Sparsemax con soporte para máscara.
+    
+    Esta implementación proyecta cada vector de logits (a lo largo del eje especificado)
+    sobre el simplex restringido a las posiciones activas indicadas por la máscara.
+    """
     def __init__(self, axis: int = -1, **kwargs):
         super().__init__(**kwargs)
         self.axis = axis
 
     def call(self, inputs: tf.Tensor, mask: Optional[tf.Tensor] = None) -> tf.Tensor:
-        # Verificar la forma de la máscara y los logits
-        tf.print("Shape of inputs:", tf.shape(inputs))
-        if mask is not None:
-            tf.print("Shape of mask:", tf.shape(mask))
-            tf.debugging.assert_shapes([(inputs, mask.shape)], message="Mask and inputs must have compatible shapes")
+        # Si no se proporciona máscara, se usan todas las posiciones como activas.
+        if mask is None:
+            mask = tf.ones_like(inputs, dtype=tf.bool)
+        else:
+            tf.debugging.assert_shapes([(inputs, mask.shape)],
+                                        message="Mask and inputs must have compatible shapes")
         
-        # Evita valores grandes restando el máximo
-        inputs_safe = inputs - tf.reduce_max(inputs, axis=self.axis, keepdims=True)
+        # Reordenar para que el eje de proyección sea el último.
+        perm = list(range(tf.rank(inputs)))
+        perm[self.axis], perm[-1] = perm[-1], perm[self.axis]
+        inputs_perm = tf.transpose(inputs, perm)
+        mask_perm = tf.transpose(mask, perm)
         
-        # Ordenar valores en orden descendente
-        z_sorted = tf.sort(inputs_safe, axis=self.axis, direction='DESCENDING')
+        # Ahora la forma es (..., d). Aplanamos las dimensiones previas.
+        flat_shape = [-1, tf.shape(inputs_perm)[-1]]
+        inputs_flat = tf.reshape(inputs_perm, flat_shape)
+        mask_flat = tf.reshape(mask_perm, flat_shape)
         
-        # Cálculo de tau
-        range_z = tf.cast(tf.range(1, tf.shape(z_sorted)[self.axis] + 1), dtype=inputs.dtype)
-        bound = 1 + range_z * z_sorted
-        cumsum = tf.cumsum(z_sorted, axis=self.axis)
-        is_gt = tf.cast(tf.greater(bound, cumsum), dtype=inputs.dtype)
-        k = tf.reduce_max(is_gt * range_z, axis=self.axis, keepdims=True)
-        tau = (tf.reduce_sum(z_sorted * is_gt, axis=self.axis, keepdims=True) - 1) / tf.maximum(k, 1.0)
-        output = tf.maximum(tf.zeros_like(inputs), inputs_safe - tau)
+        # Aplicar la proyección por fila (cada vector de logits) usando tf.map_fn.
+        def project_fn(args):
+            vec, m = args
+            return project_onto_simplex(vec, m)
         
-        # Aplicar máscara si está presente
-        if mask is not None:
-            mask = tf.cast(mask, dtype=tf.bool)  # Asegurar que la máscara sea booleana
-            mask = tf.broadcast_to(mask, tf.shape(output))  # Asegurar la misma forma
-            output = tf.where(mask, output, tf.zeros_like(output))  # Enmascarar valores
+        projected = tf.map_fn(project_fn, (inputs_flat, mask_flat), dtype=inputs.dtype)
         
-        # Penalizar valores enmascarados antes de aplicar Sparsemax
-        if mask is not None:
-            inputs = tf.where(mask, inputs, -1e9)
-            output = self.call(inputs)  # Reaplicar la función con valores penalizados
-        
-        return output
+        # Restaurar la forma original.
+        outputs_perm = tf.reshape(projected, tf.shape(inputs_perm))
+        inv_perm = np.argsort(perm).tolist()
+        outputs = tf.transpose(outputs_perm, inv_perm)
+        return outputs
 
     def get_config(self):
         config = super().get_config()
         config.update({"axis": self.axis})
         return config
+
 
 # --- DropConnect ---
 class DropConnect(Dropout):  # Hereda de Dropout

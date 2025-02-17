@@ -1,53 +1,51 @@
-# models/tft/base/config.py
-from pydantic import BaseModel, field_validator, Field
-from typing import List, Dict, Optional, Union, Literal
+from typing import List, Optional
 
-class TFTConfig(BaseModel):
-    # --- Model Params ---
-    raw_time_features_dim: int = Field(..., description="Dimension of raw time features.")  # ... indica que es obligatorio
-    raw_static_features_dim: int = Field(..., description="Dimension of raw static features")
-    time_varying_categorical_features_cardinalities: List[int] = Field(...,
-        description="Cardinalities of time-varying categorical features.")
-    static_categorical_features_cardinalities: List[int] = Field(...,
-        description="Cardinalities of static categorical features.")
-    num_quantiles: int = Field(3, description="Number of quantiles to predict.", ge=1)  # ge: greater or equal
-    hidden_size: int = Field(64, description="Hidden size of the model.", gt=0)  # gt: greater than
-    lstm_layers: int = Field(1, description="Number of LSTM layers.", ge=1)
-    attention_heads: int = Field(4, description="Number of attention heads.", ge=1)
-    dropout_rate: float = Field(0.1, description="Dropout rate.", ge=0.0, le=1.0)
-    use_positional_encoding: bool = Field(False, description="Whether to use positional encoding.")
-    use_dropconnect: bool = Field(False, description="Whether to use DropConnect (only for LSTM/GRU).")
-    use_scheduled_drop_path: bool = Field(False, description="Whether to use Scheduled Drop Path.")
-    drop_path_rate: float = Field(0.1, description="Drop path rate.", ge=0.0, le=1.0)
-    kernel_initializer: str = Field("glorot_uniform", description="Kernel initializer.")
-    use_glu_in_grn: bool = Field(True, description="Whether to use GLU in GRN.")
-    use_layer_norm_in_grn: bool = Field(True, description="Whether to use Layer Normalization in GRN.")
-    use_multi_query_attention: bool = Field(False, description="Whether to use Multi-Query Attention.")
-    use_indrnn: bool = Field(False, description="Whether to use IndRNN.")
-    use_logsparse_attention: bool = Field(False, description="Whether to use LogSparse Attention.")
-    sparsity_factor: int = Field(2, description="Sparsity factor for LogSparse Attention.", ge=1)
-    use_evidential_regression: bool = Field(False, description="Whether to use Evidential Regression.")
-    use_mdn: bool = Field(False, description="Whether to use Mixture Density Network.")
-    num_mixtures: int = Field(5, description="Number of mixtures for MDN.", ge=1)
-    use_time2vec: bool = Field(False, description="Whether to use Time2Vec.")
-    time2vec_dim: int = Field(16, description="Dimension of Time2Vec embedding.", gt=0)
-    time2vec_activation: str = Field('sin', description="Activation for Time2Vec.")
-    use_fourier_features: bool = Field(False, description="Whether to use Learnable Fourier Features.")
-    num_fourier_features: int = Field(10, description="Number of Fourier Features", gt=0)
-    use_reformer_attention: bool = Field(False, description="Whether to use Reformer Attention.")
-    num_buckets: int = Field(8, description="Number of buckets for Reformer/LSH Attention.", ge=1)
-    use_sparsemax: bool = Field(False, description="Whether to use Sparsemax.")
-    l1_reg: float = Field(0.0, description="L1 regularization weight.")
-    l2_reg: float = Field(0.0, description="L2 regularization weight.")
-    use_gnn: bool = Field(False, description="Usa GNN")
-    gnn_embedding_dim: Optional[int] = Field(None, description="Dimension de la salida de la GNN")
-    use_transformer: bool = Field(False, description="Usa Transformer")
-    transformer_embedding_dim: Optional[int] = Field(None, description="Dimension de la salida del Transformer")
-    seq_len: int = Field(20, description="Longitud de la secuencia") #Se agrega longitud de secuencia
+class TFTConfig:
+    def __init__(self, **kwargs):
+        self.raw_time_features_dim: int = kwargs.get('raw_time_features_dim', 0)
+        self.raw_static_features_dim: int = kwargs.get('raw_static_features_dim', 0)
+        self.time_varying_categorical_features_cardinalities: List[int] = kwargs.get('time_varying_categorical_features_cardinalities', [])
+        self.static_categorical_features_cardinalities: List[int] = kwargs.get('static_categorical_features_cardinalities', [])
+        self.num_quantiles: int = kwargs.get('num_quantiles', 3)
+        self.hidden_size: int = kwargs.get('hidden_size', 64)
+        self.lstm_layers: int = kwargs.get('lstm_layers', 2)
+        self.attention_heads: int = kwargs.get('attention_heads', 4)
+        self.dropout_rate: float = kwargs.get('dropout_rate', 0.1)
+        self.use_positional_encoding: bool = kwargs.get('use_positional_encoding', True)
+        self.use_dropconnect: bool = kwargs.get('use_dropconnect', False)
+        self.use_scheduled_drop_path: bool = kwargs.get('use_scheduled_drop_path', False)
+        self.drop_path_rate: float = kwargs.get('drop_path_rate', 0.1)
+        self.kernel_initializer: str = kwargs.get('kernel_initializer', 'glorot_uniform')
+        self.use_glu_in_grn: bool = kwargs.get('use_glu_in_grn', True)
+        self.use_layer_norm_in_grn: bool = kwargs.get('use_layer_norm_in_grn', True)
+        self.use_multi_query_attention: bool = kwargs.get('use_multi_query_attention', False)
+        self.use_indrnn: bool = kwargs.get('use_indrnn', False)
+        self.use_logsparse_attention: bool = kwargs.get('use_logsparse_attention', False)
+        self.sparsity_factor: int = kwargs.get('sparsity_factor', 4)
+        self.use_evidential_regression: bool = kwargs.get('use_evidential_regression', False)
+        self.use_mdn: bool = kwargs.get('use_mdn', False)
+        self.num_mixtures: int = kwargs.get('num_mixtures', 5)
+        self.use_time2vec: bool = kwargs.get('use_time2vec', False)
+        self.time2vec_dim: int = kwargs.get('time2vec_dim', 32)
+        self.time2vec_activation: str = kwargs.get('time2vec_activation', 'sin')  # O 'sin'
+        self.use_fourier_features: bool = kwargs.get('use_fourier_features', False)
+        self.num_fourier_features: int = kwargs.get('num_fourier_features', 10)
+        self.use_reformer_attention: bool = kwargs.get('use_reformer_attention', False)
+        self.num_buckets: int = kwargs.get('num_buckets', 8)
+        self.use_sparsemax: bool = kwargs.get('use_sparsemax', False)
+        self.l1_reg: float = kwargs.get('l1_reg', 0.0)
+        self.l2_reg: float = kwargs.get('l2_reg', 0.0)
+        self.use_gnn: bool = kwargs.get('use_gnn', False)
+        self.gnn_embedding_dim: Optional[int] = kwargs.get('gnn_embedding_dim', None)
+        self.use_transformer: bool = kwargs.get('use_transformer', False)
+        self.transformer_embedding_dim: Optional[int] = kwargs.get('transformer_embedding_dim', None)
+        self.seq_len: int = kwargs.get('seq_len', 20)  # Añadido seq_len
 
-    # --- Validadores ---
-    @field_validator("time_varying_categorical_features_cardinalities", "static_categorical_features_cardinalities", mode='before')
-    def cardinalities_must_be_positive(cls, v):
-        if any(x <= 0 for x in v):
-            raise ValueError("Cardinalities must be positive")
-        return v
+
+    def copy(self, update=None):
+        if update is None:
+            update = {}
+        return TFTConfig(**{**self.__dict__, **update})
+
+    def dict(self):
+        return self.__dict__
