@@ -84,6 +84,8 @@ class GatedResidualNetwork(Layer):
             if len(x.shape) == 3 and len(context.shape) == 2:
                 context = tf.expand_dims(context, axis=1)
                 context = tf.tile(context, [1, tf.shape(x)[1], 1])
+            elif len(x.shape) == 3 and len(context.shape) == 3 and x.shape[1] != context.shape[1]:
+                context = tf.tile(context[:, :1, :], [1, tf.shape(x)[1], 1])
             x = Concatenate(axis=-1)([x, context])
 
         x = self.apply_time_distributed(self.dense1)(x)
@@ -123,7 +125,6 @@ class GatedResidualNetwork(Layer):
         return config
 
 
-# --- Variable Selection Network (VSN) ---
 class VariableSelectionNetwork(Layer):
     def __init__(self, num_inputs: int, units: int, dropout_rate: float,
                  use_glu_in_grn: bool = True, l1_reg: float = 0.0,
@@ -131,7 +132,7 @@ class VariableSelectionNetwork(Layer):
         super(VariableSelectionNetwork, self).__init__(**kwargs)
         self.context_units = context_units
         self.num_inputs = num_inputs
-        self.units = units  # Asegurar que units = 16
+        self.units = units
         self.dropout_rate = dropout_rate
         self.use_glu_in_grn = use_glu_in_grn
         self.l1_reg = l1_reg
@@ -158,6 +159,8 @@ class VariableSelectionNetwork(Layer):
         if not isinstance(inputs, list) or len(inputs) != self.num_inputs:
             raise ValueError(f"Expected list of {self.num_inputs} tensors, but got {type(inputs)} with length {len(inputs)}")
 
+        batch_size = tf.shape(inputs[0])[0]  # Derive batch size from the first input tensor
+
         # Aplicar GRN a cada entrada (transforma de 8 a 16)
         grn_outputs = [self.grns[i](inp, training=training, context=context) for i, inp in enumerate(inputs)]
 
@@ -169,6 +172,10 @@ class VariableSelectionNetwork(Layer):
 
         # Reducir la dimensionalidad de grn_aggregate a (batch_size, num_inputs)
         grn_aggregate_reduced = tf.reduce_mean(grn_aggregate, axis=1)  # (batch_size, units)
+
+        # Asegurarse de que grn_aggregate_reduced tenga al menos dos dimensiones
+        if len(grn_aggregate_reduced.shape) == 1:
+            grn_aggregate_reduced = tf.expand_dims(grn_aggregate_reduced, axis=-1)
 
         # Cálculo de pesos de selección
         sparse_weights = self.softmax(grn_aggregate_reduced)  # (batch_size, num_inputs)
